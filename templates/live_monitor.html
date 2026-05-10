@@ -1,0 +1,1506 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IDS — Live Network Monitor</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+    <style>
+        :root {
+            --bg: #050c1a;
+            --bg2: #0a1628;
+            --bg3: #0f1f35;
+            --border: rgba(56, 189, 248, 0.15);
+            --accent: #38bdf8;
+            --green: #22c55e;
+            --red: #ef4444;
+            --orange: #f97316;
+            --purple: #a855f7;
+            --blue: #3b82f6;
+            --yellow: #f59e0b;
+            --text: #e2e8f0;
+            --muted: #64748b;
+            --glass: rgba(255, 255, 255, 0.04);
+            --glow-g: 0 0 20px rgba(34, 197, 94, 0.3);
+            --glow-r: 0 0 20px rgba(239, 68, 68, 0.3);
+            --glow-b: 0 0 20px rgba(56, 189, 248, 0.3);
+        }
+
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html,
+        body {
+            height: 100%;
+            overflow: hidden;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Inter', sans-serif;
+            font-size: 13px;
+        }
+
+        /* ── SCANLINE overlay ── */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 9999;
+            background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0, 0, 0, 0.04) 2px, rgba(0, 0, 0, 0.04) 4px);
+        }
+
+        /* ── TOP BAR ── */
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 20px;
+            background: var(--bg2);
+            border-bottom: 1px solid var(--border);
+            height: 56px;
+            flex-shrink: 0;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            text-decoration: none;
+        }
+
+        .logo-icon {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, #22c55e, #059669);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+        }
+
+        .logo-text {
+            font-size: 18px;
+            font-weight: 700;
+            color: #fff;
+            letter-spacing: -0.5px;
+        }
+
+        .logo-text span {
+            color: var(--green);
+        }
+
+        .topbar-status {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--muted);
+            transition: all .3s;
+        }
+
+        .status-dot.alive {
+            background: var(--green);
+            box-shadow: 0 0 8px var(--green);
+            animation: pulse-dot 1.5s infinite;
+        }
+
+        .status-dot.paused-s {
+            background: var(--yellow);
+            box-shadow: 0 0 8px var(--yellow);
+        }
+
+        @keyframes pulse-dot {
+
+            0%,
+            100% {
+                opacity: 1
+            }
+
+            50% {
+                opacity: .4
+            }
+        }
+
+        .status-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: .5px;
+        }
+
+        .clock {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            color: var(--accent);
+            background: rgba(56, 189, 248, .08);
+            padding: 4px 10px;
+            border-radius: 6px;
+            border: 1px solid rgba(56, 189, 248, .2);
+        }
+
+        /* ── LAYOUT ── */
+        .app-layout {
+            display: flex;
+            height: calc(100vh - 56px);
+            overflow: hidden;
+        }
+
+        /* ── LEFT PANEL (controls + charts) ── */
+        .left-panel {
+            width: 280px;
+            min-width: 280px;
+            background: var(--bg2);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            padding: 14px;
+            gap: 12px;
+        }
+
+        .left-panel::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .left-panel::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 2px;
+        }
+
+        /* ── MAIN CENTER ── */
+        .main-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* ── STATS ROW ── */
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 8px;
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+
+        .stat-card {
+            background: var(--bg3);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 10px 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            transition: border-color .3s, box-shadow .3s;
+        }
+
+        .stat-card:hover {
+            border-color: var(--accent);
+            box-shadow: var(--glow-b);
+        }
+
+        .stat-label {
+            font-size: 10px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: .5px;
+        }
+
+        .stat-value {
+            font-size: 22px;
+            font-weight: 800;
+            font-family: 'JetBrains Mono', monospace;
+            line-height: 1;
+        }
+
+        .stat-sub {
+            font-size: 10px;
+            color: var(--muted);
+        }
+
+        /* ── PACKET FEED TABLE ── */
+        .feed-wrapper {
+            flex: 1;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .feed-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 14px;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg2);
+            flex-shrink: 0;
+        }
+
+        .feed-toolbar .label {
+            font-size: 11px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: .5px;
+            margin-right: 4px;
+        }
+
+        .filter-btn {
+            font-size: 11px;
+            font-weight: 600;
+            padding: 4px 12px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--muted);
+            cursor: pointer;
+            transition: .2s;
+        }
+
+        .filter-btn:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        .filter-btn.active {
+            background: var(--accent);
+            color: #000;
+            border-color: var(--accent);
+        }
+
+        .feed-table-wrap {
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .feed-table-wrap::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .feed-table-wrap::-webkit-scrollbar-thumb {
+            background: rgba(56, 189, 248, .2);
+            border-radius: 2px;
+        }
+
+        table.feed-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+        }
+
+        table.feed-table thead th {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            background: var(--bg2);
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: .5px;
+            font-weight: 500;
+            padding: 8px 10px;
+            border-bottom: 1px solid var(--border);
+            white-space: nowrap;
+        }
+
+        table.feed-table tbody tr {
+            border-bottom: 1px solid rgba(255, 255, 255, .03);
+            transition: background .15s;
+            animation: fadeInRow .3s ease-out;
+        }
+
+        table.feed-table tbody tr:hover {
+            background: rgba(56, 189, 248, .05);
+        }
+
+        @keyframes fadeInRow {
+            from {
+                opacity: 0;
+                transform: translateY(-4px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        table.feed-table tbody tr.threat-row {
+            background: rgba(239, 68, 68, .06);
+        }
+
+        table.feed-table tbody tr.threat-row:hover {
+            background: rgba(239, 68, 68, .1);
+        }
+
+        table.feed-table td {
+            padding: 7px 10px;
+            color: var(--text);
+            white-space: nowrap;
+        }
+
+        .badge-cat {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: .5px;
+            text-transform: uppercase;
+        }
+
+        .proto-tag {
+            display: inline-block;
+            padding: 1px 6px;
+            border-radius: 3px;
+            font-size: 10px;
+            font-weight: 600;
+            background: rgba(56, 189, 248, .12);
+            color: var(--accent);
+            border: 1px solid rgba(56, 189, 248, .25);
+        }
+
+        .conf-bar {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .conf-mini {
+            height: 4px;
+            border-radius: 2px;
+            background: var(--green);
+            transition: width .3s;
+        }
+
+        .conf-val {
+            font-size: 10px;
+            color: var(--muted);
+            min-width: 30px;
+        }
+
+        /* ── RIGHT PANEL ── */
+        .right-panel {
+            width: 260px;
+            min-width: 260px;
+            background: var(--bg2);
+            border-left: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            padding: 14px;
+            gap: 12px;
+        }
+
+        .right-panel::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .right-panel::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 2px;
+        }
+
+        /* ── CARDS ── */
+        .panel-card {
+            background: var(--bg3);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 14px;
+        }
+
+        .panel-card h6 {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: .8px;
+            color: var(--muted);
+            margin-bottom: 12px;
+            font-weight: 600;
+        }
+
+        /* ── CONTROLS ── */
+        .ctrl-btn {
+            width: 100%;
+            padding: 10px;
+            border-radius: 10px;
+            border: none;
+            font-family: 'Inter', sans-serif;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all .2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .ctrl-btn.start-btn {
+            background: linear-gradient(135deg, #22c55e, #16a34a);
+            color: #fff;
+        }
+
+        .ctrl-btn.start-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: var(--glow-g);
+        }
+
+        .ctrl-btn.stop-btn {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            color: #fff;
+        }
+
+        .ctrl-btn.stop-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: var(--glow-r);
+        }
+
+        .ctrl-btn.pause-btn {
+            background: rgba(245, 158, 11, .15);
+            color: var(--yellow);
+            border: 1px solid rgba(245, 158, 11, .3);
+        }
+
+        .ctrl-btn.pause-btn:hover {
+            background: rgba(245, 158, 11, .25);
+        }
+
+        .ctrl-btn.report-btn {
+            background: rgba(56, 189, 248, .1);
+            color: var(--accent);
+            border: 1px solid rgba(56, 189, 248, .25);
+        }
+
+        .ctrl-btn.report-btn:hover {
+            background: rgba(56, 189, 248, .2);
+            box-shadow: var(--glow-b);
+        }
+
+        .ctrl-btn:disabled {
+            opacity: .4;
+            cursor: not-allowed;
+            transform: none !important;
+            box-shadow: none !important;
+        }
+
+        /* ── SPEED SLIDER ── */
+        .speed-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .speed-label {
+            font-size: 11px;
+            color: var(--muted);
+            min-width: 28px;
+            text-align: right;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        input[type=range] {
+            flex: 1;
+            -webkit-appearance: none;
+            appearance: none;
+            height: 4px;
+            background: var(--border);
+            border-radius: 2px;
+            outline: none;
+            cursor: pointer;
+        }
+
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: var(--accent);
+            box-shadow: 0 0 6px var(--accent);
+            cursor: pointer;
+        }
+
+        /* ── ALERT TOAST ── */
+        #alert-container {
+            position: fixed;
+            top: 70px;
+            right: 20px;
+            z-index: 9000;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            pointer-events: none;
+        }
+
+        .alert-toast {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: rgba(15, 31, 53, .95);
+            border: 1px solid;
+            border-radius: 10px;
+            padding: 10px 14px;
+            backdrop-filter: blur(12px);
+            pointer-events: auto;
+            animation: slideIn .3s ease-out;
+            max-width: 320px;
+            font-size: 12px;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(120%);
+                opacity: 0
+            }
+
+            to {
+                transform: translateX(0);
+                opacity: 1
+            }
+        }
+
+        .alert-toast.fadeout {
+            animation: slideOut .3s ease-in forwards;
+        }
+
+        @keyframes slideOut {
+            from {
+                transform: translateX(0);
+                opacity: 1
+            }
+
+            to {
+                transform: translateX(120%);
+                opacity: 0
+            }
+        }
+
+        .toast-icon {
+            font-size: 18px;
+            flex-shrink: 0;
+        }
+
+        .toast-body {
+            flex: 1;
+        }
+
+        .toast-title {
+            font-weight: 700;
+            font-size: 12px;
+        }
+
+        .toast-detail {
+            color: var(--muted);
+            font-size: 11px;
+            margin-top: 2px;
+        }
+
+        /* ── THREAT LOG ── */
+        .threat-log {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .threat-log::-webkit-scrollbar {
+            width: 3px;
+        }
+
+        .threat-log::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 2px;
+        }
+
+        .log-entry {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            padding: 8px 10px;
+            border-radius: 8px;
+            background: rgba(239, 68, 68, .07);
+            border: 1px solid rgba(239, 68, 68, .15);
+            animation: fadeInRow .3s ease-out;
+        }
+
+        .log-entry-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .log-entry-title {
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .log-entry-time {
+            font-size: 10px;
+            color: var(--muted);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .log-entry-detail {
+            font-size: 10px;
+            color: var(--muted);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* ── TIMELINE CHART AREA ── */
+        .timeline-wrap {
+            background: var(--bg3);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 14px;
+        }
+
+        .timeline-wrap h6 {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: .8px;
+            color: var(--muted);
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
+
+        /* ── DISTRIBUTION BAR ── */
+        .dist-bar {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .dist-item {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+        .dist-header {
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .dist-name {
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .dist-count {
+            font-size: 11px;
+            color: var(--muted);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .dist-track {
+            height: 5px;
+            background: rgba(255, 255, 255, .06);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .dist-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width .5s ease;
+        }
+
+        /* ── MISC ── */
+        .no-data {
+            text-align: center;
+            color: var(--muted);
+            padding: 40px 0;
+            font-size: 12px;
+        }
+
+        .conn-indicator {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            color: var(--muted);
+        }
+
+        .throughput {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            color: var(--accent);
+            background: rgba(56, 189, 248, .08);
+            padding: 2px 8px;
+            border-radius: 4px;
+            border: 1px solid rgba(56, 189, 248, .15);
+            margin-left: auto;
+        }
+
+        .scroll-lock-btn {
+            font-size: 10px;
+            padding: 3px 8px;
+            border-radius: 5px;
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--muted);
+            cursor: pointer;
+            transition: .2s;
+        }
+
+        .scroll-lock-btn.locked {
+            border-color: var(--accent);
+            color: var(--accent);
+            background: rgba(56, 189, 248, .1);
+        }
+
+        /* ── PULSE ring for critical attacks ── */
+        @keyframes ringPulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, .6);
+            }
+
+            70% {
+                box-shadow: 0 0 0 12px rgba(239, 68, 68, 0);
+            }
+
+            100% {
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+            }
+        }
+
+        .threat-flash {
+            animation: ringPulse .8s ease-out;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- ══ TOP BAR ══ -->
+    <div class="topbar">
+        <a href="/" class="logo">
+            <div class="logo-icon">🛡️</div>
+            <span class="logo-text">IDS<span>Pro</span></span>
+        </a>
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--accent);">
+            <i class="bi bi-activity"></i> LIVE NETWORK MONITOR
+        </div>
+        <div class="topbar-status">
+            <div class="conn-indicator">
+                <div class="status-dot" id="statusDot"></div>
+                <span class="status-label" id="statusLabel">Idle</span>
+            </div>
+            <div class="clock" id="clockEl">--:--:--</div>
+            <a href="/" class="btn btn-sm btn-outline-secondary ms-2" style="font-size:11px;">
+                <i class="bi bi-arrow-left me-1"></i>Home
+            </a>
+            <a href="/dashboard" class="btn btn-sm btn-outline-info ms-1" style="font-size:11px;">
+                <i class="bi bi-bar-chart-fill me-1"></i>Analytics
+            </a>
+        </div>
+    </div>
+
+    <!-- ══ APP LAYOUT ══ -->
+    <div class="app-layout">
+
+        <!-- ───── LEFT PANEL ───── -->
+        <div class="left-panel">
+
+            <!-- Controls -->
+            <div class="panel-card">
+                <h6><i class="bi bi-sliders me-1"></i>Controls</h6>
+                <div style="display:flex;flex-direction:column;gap:8px;">
+                    <button class="ctrl-btn start-btn" id="btnStart" onclick="startFeed()">
+                        <i class="bi bi-play-circle-fill"></i> Start Live Feed
+                    </button>
+                    <button class="ctrl-btn pause-btn" id="btnPause" onclick="pauseFeed()" disabled>
+                        <i class="bi bi-pause-circle-fill"></i> Pause
+                    </button>
+                    <button class="ctrl-btn stop-btn" id="btnStop" onclick="stopFeed()" disabled>
+                        <i class="bi bi-stop-circle-fill"></i> Stop
+                    </button>
+                    <hr style="border-color:var(--border);margin:4px 0;">
+                    <button class="ctrl-btn report-btn" id="btnReport" onclick="downloadReport()" disabled>
+                        <i class="bi bi-download"></i> Download Report (CSV)
+                    </button>
+                    <button class="ctrl-btn report-btn" onclick="window.open('/api/live/report_json','_blank')"
+                        id="btnJson" disabled>
+                        <i class="bi bi-file-code"></i> Export JSON
+                    </button>
+                </div>
+            </div>
+
+            <!-- Speed -->
+            <div class="panel-card">
+                <h6><i class="bi bi-speedometer2 me-1"></i>Playback Speed</h6>
+                <div class="speed-row">
+                    <span class="speed-label">0.5×</span>
+                    <input type="range" id="speedSlider" min="0.5" max="5" step="0.5" value="1"
+                        oninput="updateSpeed(this.value)">
+                    <span class="speed-label" id="speedVal">1×</span>
+                </div>
+            </div>
+
+            <!-- Filter -->
+            <div class="panel-card">
+                <h6><i class="bi bi-funnel-fill me-1"></i>Packet Filter</h6>
+                <div style="display:flex;gap:4px;flex-wrap:wrap;">
+                    <button class="filter-btn active" onclick="setFilter(this,'all')">All</button>
+                    <button class="filter-btn" onclick="setFilter(this,'attacks')">Attacks Only</button>
+                    <button class="filter-btn" onclick="setFilter(this,'normal')">Normal Only</button>
+                </div>
+            </div>
+
+            <!-- Mini doughnut -->
+            <div class="panel-card">
+                <h6><i class="bi bi-pie-chart-fill me-1"></i>Attack Distribution</h6>
+                <canvas id="donutChart" height="160"></canvas>
+            </div>
+
+            <!-- Protocol dist -->
+            <div class="panel-card">
+                <h6><i class="bi bi-diagram-3 me-1"></i>Protocol Breakdown</h6>
+                <div class="dist-bar" id="protoBreakdown">
+                    <div class="no-data">No data yet</div>
+                </div>
+            </div>
+
+        </div><!-- /left-panel -->
+
+        <!-- ───── MAIN PANEL ───── -->
+        <div class="main-panel">
+
+            <!-- Stats Row -->
+            <div class="stats-row">
+                <div class="stat-card">
+                    <div class="stat-label">Total Packets</div>
+                    <div class="stat-value" id="statTotal" style="color:var(--accent)">0</div>
+                    <div class="stat-sub">Session packets</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Threats</div>
+                    <div class="stat-value" id="statThreats" style="color:var(--red)">0</div>
+                    <div class="stat-sub">Attacks detected</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Normal</div>
+                    <div class="stat-value" id="statNormal" style="color:var(--green)">0</div>
+                    <div class="stat-sub">Benign traffic</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Threat Rate</div>
+                    <div class="stat-value" id="statRate" style="color:var(--orange)">0%</div>
+                    <div class="stat-sub">% of total</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Packets/sec</div>
+                    <div class="stat-value" id="statPPS" style="color:var(--yellow)">0</div>
+                    <div class="stat-sub">Throughput</div>
+                </div>
+            </div>
+
+            <!-- Feed Toolbar -->
+            <div class="feed-toolbar">
+                <i class="bi bi-broadcast text-success" style="font-size:14px;"></i>
+                <span class="label">Live Feed</span>
+                <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
+                    <span style="font-size:10px;color:var(--muted);" id="rowCount">0 packets displayed</span>
+                    <button class="scroll-lock-btn locked" id="scrollBtn" onclick="toggleScrollLock()">
+                        <i class="bi bi-lock-fill me-1"></i>Auto-scroll
+                    </button>
+                    <button class="filter-btn" onclick="clearFeed()" style="font-size:10px;padding:3px 8px;">
+                        <i class="bi bi-trash3 me-1"></i>Clear
+                    </button>
+                </div>
+            </div>
+
+            <!-- Feed Table -->
+            <div class="feed-wrapper">
+                <div class="feed-table-wrap" id="feedScroll">
+                    <table class="feed-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Time</th>
+                                <th>Src IP</th>
+                                <th>Dst IP</th>
+                                <th>Proto</th>
+                                <th>Service</th>
+                                <th>Flag</th>
+                                <th>↑ Bytes</th>
+                                <th>↓ Bytes</th>
+                                <th>Category</th>
+                                <th>Confidence</th>
+                                <th>Label</th>
+                            </tr>
+                        </thead>
+                        <tbody id="feedBody">
+                            <tr>
+                                <td colspan="12" class="no-data">
+                                    <i class="bi bi-broadcast"
+                                        style="font-size:24px;display:block;margin-bottom:8px;opacity:.3;"></i>
+                                    Start the live feed to begin monitoring
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div><!-- /main-panel -->
+
+        <!-- ───── RIGHT PANEL ───── -->
+        <div class="right-panel">
+
+            <!-- Timeline chart -->
+            <div class="timeline-wrap">
+                <h6><i class="bi bi-graph-up me-1"></i>Threat Timeline (60s)</h6>
+                <canvas id="timelineChart" height="120"></canvas>
+            </div>
+
+            <!-- Attack type summary -->
+            <div class="panel-card">
+                <h6><i class="bi bi-shield-exclamation me-1"></i>Attack Types</h6>
+                <div class="dist-bar" id="attackTypeBar">
+                    <div class="no-data" style="padding:16px 0;">No data yet</div>
+                </div>
+            </div>
+
+            <!-- Threat Log -->
+            <div class="panel-card">
+                <h6><i class="bi bi-journal-text me-1"></i>Threat Log</h6>
+                <div class="threat-log" id="threatLog">
+                    <div class="no-data" style="padding:16px 0;">No threats detected yet</div>
+                </div>
+            </div>
+
+        </div><!-- /right-panel -->
+
+    </div><!-- /app-layout -->
+
+    <!-- Alert container -->
+    <div id="alert-container"></div>
+
+    <script>
+        // ══════════════════════════════════════════════════════════════
+        // STATE
+        // ══════════════════════════════════════════════════════════════
+        const COLORS = {
+            Normal: '#22c55e', DoS: '#ef4444', Probe: '#f97316',
+            R2L: '#a855f7', U2R: '#3b82f6'
+        };
+        const MAX_ROWS = 200;       // max rows in DOM
+        const TIMELINE_LEN = 60;    // seconds of timeline
+
+        let evtSource = null;
+        let isRunning = false;
+        let isPaused = false;
+        let scrollLocked = true;
+        let rowCount = 0;
+        let speed = 1.0;
+        let stats = { total: 0, threats: 0, normal: 0, by_type: { Normal: 0, DoS: 0, Probe: 0, R2L: 0, U2R: 0 }, by_proto: { tcp: 0, udp: 0, icmp: 0 } };
+        let ppsHistory = [];   // { t, v } per second for PPS calculation
+        let threatCounts = []; // array of 60 {t, threats, total}
+        let firstPacketTime = null;
+        let lastPacketCount = 0;
+        let lastPPSCheck = Date.now();
+
+        // ══════════════════════════════════════════════════════════════
+        // CLOCK
+        // ══════════════════════════════════════════════════════════════
+        function updateClock() {
+            const now = new Date();
+            document.getElementById('clockEl').textContent =
+                now.toLocaleTimeString('en-US', { hour12: false });
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        // ══════════════════════════════════════════════════════════════
+        // CHARTS
+        // ══════════════════════════════════════════════════════════════
+        const donutCtx = document.getElementById('donutChart').getContext('2d');
+        const donutChart = new Chart(donutCtx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Normal', 'DoS', 'Probe', 'R2L', 'U2R'],
+                datasets: [{ data: [1, 0, 0, 0, 0], backgroundColor: ['#22c55e', '#ef4444', '#f97316', '#a855f7', '#3b82f6'], borderWidth: 0, hoverOffset: 4 }]
+            },
+            options: {
+                cutout: '72%', animation: { duration: 400 }, responsive: true,
+                plugins: {
+                    legend: { position: 'bottom', labels: { color: '#64748b', font: { size: 10 }, padding: 8, boxWidth: 10 } },
+                    tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.parsed}` } }
+                }
+            }
+        });
+
+        // Timeline chart
+        const tlCtx = document.getElementById('timelineChart').getContext('2d');
+        const tlLabels = Array.from({ length: TIMELINE_LEN }, (_, i) => `${TIMELINE_LEN - i}s`).reverse();
+        const timelineChart = new Chart(tlCtx, {
+            type: 'line',
+            data: {
+                labels: tlLabels,
+                datasets: [
+                    {
+                        label: 'Threats', data: new Array(TIMELINE_LEN).fill(0),
+                        borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,.15)',
+                        fill: true, tension: .4, pointRadius: 0, borderWidth: 1.5
+                    },
+                    {
+                        label: 'Total', data: new Array(TIMELINE_LEN).fill(0),
+                        borderColor: '#38bdf8', backgroundColor: 'rgba(56,189,248,.08)',
+                        fill: true, tension: .4, pointRadius: 0, borderWidth: 1, borderDash: [3, 3]
+                    }
+                ]
+            },
+            options: {
+                animation: { duration: 300 }, responsive: true,
+                plugins: { legend: { labels: { color: '#64748b', font: { size: 10 }, boxWidth: 10, padding: 8 } } },
+                scales: {
+                    x: { ticks: { color: '#475569', font: { size: 8 }, maxTicksLimit: 6 }, grid: { color: 'rgba(255,255,255,.04)' } },
+                    y: { ticks: { color: '#475569', font: { size: 9 } }, grid: { color: 'rgba(255,255,255,.04)' }, beginAtZero: true }
+                }
+            }
+        });
+
+        let tlWindow = new Array(TIMELINE_LEN).fill(null).map(() => ({ threats: 0, total: 0 }));
+        let tlIntervalId = null;
+
+        function startTimeline() {
+            tlIntervalId = setInterval(() => {
+                tlWindow.shift();
+                tlWindow.push({ threats: 0, total: 0 });
+            }, 1000);
+        }
+
+        function pushToTimeline(isThreats) {
+            if (tlWindow.length === 0) return;
+            tlWindow[TIMELINE_LEN - 1].total++;
+            if (isThreats) tlWindow[TIMELINE_LEN - 1].threats++;
+            // update chart data
+            timelineChart.data.datasets[0].data = tlWindow.map(w => w.threats);
+            timelineChart.data.datasets[1].data = tlWindow.map(w => w.total);
+            timelineChart.update('none');
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        // FEED CONTROLS
+        // ══════════════════════════════════════════════════════════════
+        function startFeed() {
+            if (isRunning) return;
+            fetch('/api/live/start', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ speed, filter: currentFilter() })
+            }).then(r => r.json()).then(d => {
+                console.log('start', d);
+                setStatus('running');
+                connectSSE();
+                startTimeline();
+                firstPacketTime = null;
+            });
+        }
+
+        function stopFeed() {
+            fetch('/api/live/stop', { method: 'POST' });
+            disconnectSSE();
+            setStatus('idle');
+            if (tlIntervalId) clearInterval(tlIntervalId);
+        }
+
+        function pauseFeed() {
+            fetch('/api/live/pause', { method: 'POST' }).then(r => r.json()).then(d => {
+                isPaused = (d.status === 'paused');
+                const btn = document.getElementById('btnPause');
+                btn.innerHTML = isPaused
+                    ? '<i class="bi bi-play-circle-fill"></i> Resume'
+                    : '<i class="bi bi-pause-circle-fill"></i> Pause';
+                const dot = document.getElementById('statusDot');
+                const lbl = document.getElementById('statusLabel');
+                if (isPaused) { dot.className = 'status-dot paused-s'; lbl.textContent = 'Paused'; }
+                else { dot.className = 'status-dot alive'; lbl.textContent = 'Running'; }
+            });
+        }
+
+        function updateSpeed(v) {
+            speed = parseFloat(v);
+            document.getElementById('speedVal').textContent = speed + '×';
+            fetch('/api/live/speed', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ speed })
+            });
+        }
+
+        function currentFilter() {
+            const active = document.querySelector('.filter-btn.active');
+            if (!active) return 'all';
+            const txt = active.textContent.trim().toLowerCase();
+            if (txt.includes('attack')) return 'attacks';
+            if (txt.includes('normal')) return 'normal';
+            return 'all';
+        }
+
+        function setFilter(el, filt) {
+            document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+            el.classList.add('active');
+            fetch('/api/live/filter', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filter: filt })
+            });
+        }
+
+        function downloadReport() {
+            window.location.href = '/api/live/report';
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        // SSE
+        // ══════════════════════════════════════════════════════════════
+        function connectSSE() {
+            if (evtSource) { evtSource.close(); }
+            evtSource = new EventSource('/api/live/stream');
+
+            evtSource.onopen = () => { console.log('[SSE] connected'); };
+
+            evtSource.addEventListener('message', e => {
+                try {
+                    const msg = JSON.parse(e.data);
+                    handleMessage(msg);
+                } catch (ex) { }
+            });
+
+            evtSource.onerror = () => {
+                console.warn('[SSE] error/closed');
+            };
+        }
+
+        function disconnectSSE() {
+            if (evtSource) { evtSource.close(); evtSource = null; }
+        }
+
+        function handleMessage(msg) {
+            if (msg.type === 'packet') {
+                handlePacket(msg.data);
+            } else if (msg.type === 'finished') {
+                setStatus('idle');
+                showToast('info', '✅', 'Feed Complete', 'All packets processed. Download your report!');
+                if (tlIntervalId) clearInterval(tlIntervalId);
+                enableReportBtns();
+            } else if (msg.type === 'stopped') {
+                setStatus('idle');
+            } else if (msg.type === 'paused') {
+            } else if (msg.type === 'resumed') {
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        // PACKET HANDLING
+        // ══════════════════════════════════════════════════════════════
+        let _rowBatch = [];
+        let _batchScheduled = false;
+
+        function handlePacket(d) {
+            // Update stats
+            stats.total++;
+            if (d.is_threat) { stats.threats++; stats.by_type[d.category] = (stats.by_type[d.category] || 0) + 1; }
+            else { stats.normal++; stats.by_type['Normal'] = (stats.by_type['Normal'] || 0) + 1; }
+            const proto = (d.protocol || '').toLowerCase();
+            if (['tcp', 'udp', 'icmp'].includes(proto)) stats.by_proto[proto]++;
+
+            if (!firstPacketTime) firstPacketTime = Date.now();
+
+            // Timeline
+            pushToTimeline(d.is_threat);
+
+            // Threat log
+            if (d.is_threat) {
+                addThreatLog(d);
+                if (['U2R', 'R2L'].includes(d.category)) {
+                    showToast('danger', '🚨', `${d.category} Attack!`, `${d.src_ip} → ${d.dst_ip} | ${d.label}`);
+                }
+            }
+
+            // Batch DOM updates
+            _rowBatch.push(d);
+            if (!_batchScheduled) {
+                _batchScheduled = true;
+                requestAnimationFrame(flushBatch);
+            }
+
+            // Update stats UI every 5 packets
+            if (stats.total % 5 === 0) updateStatsUI();
+        }
+
+        function flushBatch() {
+            _batchScheduled = false;
+            if (_rowBatch.length === 0) return;
+
+            const tbody = document.getElementById('feedBody');
+            // Remove placeholder
+            const placeholder = tbody.querySelector('[colspan]');
+            if (placeholder) placeholder.parentElement.remove();
+
+            const frag = document.createDocumentFragment();
+            for (const d of _rowBatch) {
+                rowCount++;
+                const tr = document.createElement('tr');
+                if (d.is_threat) tr.classList.add('threat-row');
+                const color = COLORS[d.category] || '#64748b';
+                const confW = Math.round(d.confidence || 0);
+                tr.innerHTML = `
+      <td style="color:var(--muted)">${d.id}</td>
+      <td style="color:var(--accent)">${d.timestamp}</td>
+      <td>${d.src_ip}</td>
+      <td style="color:var(--muted)">${d.dst_ip}</td>
+      <td><span class="proto-tag">${d.protocol}</span></td>
+      <td>${d.service || '?'}</td>
+      <td style="color:var(--muted)">${d.flag || '?'}</td>
+      <td>${fmtBytes(d.src_bytes)}</td>
+      <td>${fmtBytes(d.dst_bytes)}</td>
+      <td><span class="badge-cat" style="background:${color}22;color:${color};border:1px solid ${color}44">${d.category}</span></td>
+      <td>
+        <div class="conf-bar">
+          <div class="conf-mini" style="width:${confW}%;background:${color};max-width:48px;"></div>
+          <span class="conf-val">${d.confidence}%</span>
+        </div>
+      </td>
+      <td style="color:var(--muted)">${d.label}</td>
+    `;
+                frag.appendChild(tr);
+            }
+            _rowBatch = [];
+
+            // Prepend (newest on top) or append
+            tbody.insertBefore(frag, tbody.firstChild);
+
+            // Trim rows
+            while (tbody.children.length > MAX_ROWS) {
+                tbody.removeChild(tbody.lastChild);
+            }
+
+            document.getElementById('rowCount').textContent = `${rowCount.toLocaleString()} packets displayed`;
+
+            if (scrollLocked) {
+                const sc = document.getElementById('feedScroll');
+                sc.scrollTop = 0;
+            }
+
+            updateStatsUI();
+            updateCharts();
+        }
+
+        function fmtBytes(b) {
+            if (b === undefined || b === null || isNaN(b)) return '—';
+            if (b === 0) return '0B';
+            if (b < 1024) return b + 'B';
+            return (b / 1024).toFixed(1) + 'K';
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        // STATS UI
+        // ══════════════════════════════════════════════════════════════
+        function updateStatsUI() {
+            document.getElementById('statTotal').textContent = stats.total.toLocaleString();
+            document.getElementById('statThreats').textContent = stats.threats.toLocaleString();
+            document.getElementById('statNormal').textContent = stats.normal.toLocaleString();
+            const rate = stats.total > 0 ? ((stats.threats / stats.total) * 100).toFixed(1) : 0;
+            document.getElementById('statRate').textContent = rate + '%';
+
+            // PPS
+            const now = Date.now();
+            const elapsed = (now - lastPPSCheck) / 1000;
+            if (elapsed >= 1) {
+                const pps = Math.round((stats.total - lastPacketCount) / elapsed);
+                document.getElementById('statPPS').textContent = pps.toLocaleString();
+                lastPacketCount = stats.total;
+                lastPPSCheck = now;
+            }
+        }
+
+        function updateCharts() {
+            // Donut
+            const bt = stats.by_type;
+            donutChart.data.datasets[0].data = [bt.Normal || 0, bt.DoS || 0, bt.Probe || 0, bt.R2L || 0, bt.U2R || 0];
+            donutChart.update('none');
+
+            // Attack type bar
+            updateDistBar('attackTypeBar', [
+                { name: 'DoS', count: bt.DoS || 0, color: COLORS.DoS },
+                { name: 'Probe', count: bt.Probe || 0, color: COLORS.Probe },
+                { name: 'R2L', count: bt.R2L || 0, color: COLORS.R2L },
+                { name: 'U2R', count: bt.U2R || 0, color: COLORS.U2R },
+                { name: 'Normal', count: bt.Normal || 0, color: COLORS.Normal },
+            ]);
+
+            // Protocol breakdown
+            const bp = stats.by_proto;
+            const total_proto = (bp.tcp || 0) + (bp.udp || 0) + (bp.icmp || 0) || 1;
+            updateDistBar('protoBreakdown', [
+                { name: 'TCP', count: bp.tcp || 0, color: '#38bdf8' },
+                { name: 'UDP', count: bp.udp || 0, color: '#818cf8' },
+                { name: 'ICMP', count: bp.icmp || 0, color: '#fb923c' },
+            ]);
+        }
+
+        function updateDistBar(elId, items) {
+            const el = document.getElementById(elId);
+            const maxVal = Math.max(...items.map(i => i.count), 1);
+            el.innerHTML = items.map(item => {
+                const pct = Math.round((item.count / maxVal) * 100);
+                return `<div class="dist-item">
+      <div class="dist-header">
+        <span class="dist-name" style="color:${item.color}">${item.name}</span>
+        <span class="dist-count">${item.count.toLocaleString()}</span>
+      </div>
+      <div class="dist-track"><div class="dist-fill" style="width:${pct}%;background:${item.color}"></div></div>
+    </div>`;
+            }).join('');
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        // THREAT LOG
+        // ══════════════════════════════════════════════════════════════
+        let threatLogCount = 0;
+        function addThreatLog(d) {
+            const el = document.getElementById('threatLog');
+            const empty = el.querySelector('.no-data');
+            if (empty) el.innerHTML = '';
+
+            if (threatLogCount >= 50) {
+                el.removeChild(el.lastChild);
+            }
+
+            const color = COLORS[d.category] || '#ef4444';
+            const div = document.createElement('div');
+            div.className = 'log-entry';
+            div.style.borderColor = color + '33';
+            div.style.background = color + '11';
+            div.innerHTML = `
+    <div class="log-entry-header">
+      <span class="log-entry-title" style="color:${color}">${d.category} — ${d.label}</span>
+      <span class="log-entry-time">${d.timestamp}</span>
+    </div>
+    <div class="log-entry-detail">${d.src_ip} → ${d.dst_ip}</div>
+    <div class="log-entry-detail">${d.protocol} | ${d.service} | ${d.confidence}% conf</div>
+  `;
+            el.insertBefore(div, el.firstChild);
+            threatLogCount++;
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        // TOASTS
+        // ══════════════════════════════════════════════════════════════
+        const TOAST_COLORS = {
+            danger: { bg: 'rgba(239,68,68,.15)', border: 'rgba(239,68,68,.4)' },
+            warning: { bg: 'rgba(245,158,11,.1)', border: 'rgba(245,158,11,.3)' },
+            info: { bg: 'rgba(56,189,248,.1)', border: 'rgba(56,189,248,.3)' },
+        };
+        let toastQueue = 0;
+        function showToast(type, icon, title, detail) {
+            // Rate limit: max 1 toast per 2s for same category
+            const c = document.getElementById('alert-container');
+            if (c.children.length > 4) return; // max 5 toasts visible
+
+            const col = TOAST_COLORS[type] || TOAST_COLORS.info;
+            const div = document.createElement('div');
+            div.className = 'alert-toast';
+            div.style.background = col.bg;
+            div.style.borderColor = col.border;
+            div.innerHTML = `
+    <span class="toast-icon">${icon}</span>
+    <div class="toast-body">
+      <div class="toast-title">${title}</div>
+      <div class="toast-detail">${detail}</div>
+    </div>
+  `;
+            c.appendChild(div);
+            setTimeout(() => {
+                div.classList.add('fadeout');
+                setTimeout(() => { c.removeChild(div); }, 300);
+            }, 4000);
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        // MISC
+        // ══════════════════════════════════════════════════════════════
+        function toggleScrollLock() {
+            scrollLocked = !scrollLocked;
+            const btn = document.getElementById('scrollBtn');
+            btn.className = scrollLocked ? 'scroll-lock-btn locked' : 'scroll-lock-btn';
+            btn.innerHTML = scrollLocked
+                ? '<i class="bi bi-lock-fill me-1"></i>Auto-scroll'
+                : '<i class="bi bi-unlock me-1"></i>Unlocked';
+        }
+
+        function clearFeed() {
+            document.getElementById('feedBody').innerHTML = `<tr><td colspan="12" class="no-data">Feed cleared. Start a new session.</td></tr>`;
+            rowCount = 0;
+            threatLogCount = 0;
+            stats = { total: 0, threats: 0, normal: 0, by_type: { Normal: 0, DoS: 0, Probe: 0, R2L: 0, U2R: 0 }, by_proto: { tcp: 0, udp: 0, icmp: 0 } };
+            document.getElementById('rowCount').textContent = '0 packets displayed';
+            document.getElementById('threatLog').innerHTML = '<div class="no-data" style="padding:16px 0;">No threats detected yet</div>';
+            updateStatsUI();
+            updateCharts();
+        }
+
+        function setStatus(s) {
+            isRunning = (s === 'running');
+            const dot = document.getElementById('statusDot');
+            const lbl = document.getElementById('statusLabel');
+            const btnStart = document.getElementById('btnStart');
+            const btnStop = document.getElementById('btnStop');
+            const btnPause = document.getElementById('btnPause');
+
+            if (s === 'running') {
+                dot.className = 'status-dot alive';
+                lbl.textContent = 'Running';
+                btnStart.disabled = true;
+                btnStop.disabled = false;
+                btnPause.disabled = false;
+                enableReportBtns();
+            } else {
+                dot.className = 'status-dot';
+                lbl.textContent = 'Idle';
+                btnStart.disabled = false;
+                btnStop.disabled = true;
+                btnPause.disabled = true;
+                isPaused = false;
+                btnPause.innerHTML = '<i class="bi bi-pause-circle-fill"></i> Pause';
+                enableReportBtns();
+            }
+        }
+
+        function enableReportBtns() {
+            const hasData = stats.total > 0;
+            document.getElementById('btnReport').disabled = !hasData;
+            document.getElementById('btnJson').disabled = !hasData;
+        }
+
+        // Initial state
+        setStatus('idle');
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+
+</html>

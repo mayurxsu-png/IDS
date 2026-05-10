@@ -1,0 +1,69 @@
+1. Normal Traffic
+Duration: 0
+Protocol Type: tcp
+Service: ftp_data
+Flag: SF
+Src Bytes: 491
+Dst Bytes: 0
+Same Srv Rate: 1.0
+Serror Rate: 0.0
+Rerror Rate: 0.0
+Count: 2
+Srv Count: 2
+Dst Host Count: 150
+
+2. DoS Attack (Neptune)
+Duration: 0
+Protocol Type: tcp
+Service: private
+Flag: S0
+Src Bytes: 0
+Dst Bytes: 0
+Same Srv Rate: 0.05
+Serror Rate: 1.0
+Rerror Rate: 0.0
+Count: 123
+Srv Count: 6
+Dst Host Count: 255
+
+3. Probe Attack (Satan)
+Duration: 0
+Protocol Type: tcp
+Service: private
+Flag: REJ
+Src Bytes: 0
+Dst Bytes: 0
+Same Srv Rate: 0.01
+Serror Rate: 0.1
+Rerror Rate: 0.89
+Count: 175
+Srv Count: 1
+Dst Host Count: 255
+
+4. R2L Attack (Guess Password)
+Duration: 0
+Protocol Type: tcp
+Service: telnet
+Flag: RSTO
+Src Bytes: 125
+Dst Bytes: 179
+Same Srv Rate: 1.0
+Serror Rate: 0.0
+Rerror Rate: 1.0
+Count: 1
+Srv Count: 1
+Dst Host Count: 4
+
+5. U2R Attack (Buffer Overflow)
+Duration: 0
+Protocol Type: tcp
+Service: ftp_data
+Flag: SF
+Src Bytes: 0
+Dst Bytes: 5696
+Same Srv Rate: 1.0
+Serror Rate: 0.0
+Rerror Rate: 0.0
+Count: 1
+Srv Count: 1
+Dst Host Count: 1

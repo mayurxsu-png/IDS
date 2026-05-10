@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>IDS — Analytics Dashboard</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+</head>
+
+<body>
+
+    <nav class="navbar navbar-expand-lg navbar-dark scrolled fixed-top" id="mainNav">
+        <div class="container">
+            <a class="navbar-brand d-flex align-items-center gap-2" href="/">
+                <i class="bi bi-shield-lock-fill text-success fs-4"></i>
+                <span class="fw-bold">IDS<span class="text-success">Pro</span></span>
+            </a>
+            <div class="ms-auto d-flex gap-2">
+                <a href="/live" class="btn btn-success btn-sm"><i class="bi bi-broadcast me-1"></i>Live Monitor</a>
+                <a href="/" class="btn btn-outline-light btn-sm"><i class="bi bi-arrow-left me-1"></i>Home</a>
+            </div>
+        </div>
+    </nav>
+
+
+    <div class="container pt-nav mt-4">
+        <h2 class="section-title mb-5 text-center">
+            <i class="bi bi-bar-chart-fill text-success me-2"></i>Analytics Dashboard
+        </h2>
+
+        {% if results %}
+        <!-- Model Accuracy Cards -->
+        <div class="row g-4 mb-5">
+            <div class="col-md-4">
+                <div class="metric-card" style="--accent:#22c55e">
+                    <div class="d-flex justify-content-between align-items-start mb-3">
+                        <div>
+                            <p class="text-muted small mb-1">XGBoost Accuracy</p>
+                            <h2 class="fw-bold mb-0 text-success">{{ results.xgb_accuracy }}%</h2>
+                        </div>
+                        <div class="metric-icon bg-success bg-opacity-10">
+                            <i class="bi bi-cpu-fill text-success fs-4"></i>
+                        </div>
+                    </div>
+                    <div class="progress mt-2" style="height:6px">
+                        <div class="progress-bar bg-success" style="width:{{ results.xgb_accuracy }}%"></div>
+                    </div>
+                    <p class="text-muted small mt-2 mb-0">Gradient boosted decision trees</p>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="metric-card" style="--accent:#3b82f6">
+                    <div class="d-flex justify-content-between align-items-start mb-3">
+                        <div>
+                            <p class="text-muted small mb-1">CNN Accuracy</p>
+                            <h2 class="fw-bold mb-0 text-primary">{{ results.cnn_accuracy }}%</h2>
+                        </div>
+                        <div class="metric-icon bg-primary bg-opacity-10">
+                            <i class="bi bi-diagram-3-fill text-primary fs-4"></i>
+                        </div>
+                    </div>
+                    <div class="progress mt-2" style="height:6px">
+                        <div class="progress-bar bg-primary" style="width:{{ results.cnn_accuracy }}%"></div>
+                    </div>
+                    <p class="text-muted small mt-2 mb-0">1D Convolutional Neural Network</p>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="metric-card" style="--accent:#f59e0b">
+                    <div class="d-flex justify-content-between align-items-start mb-3">
+                        <div>
+                            <p class="text-muted small mb-1">Ensemble Accuracy</p>
+                            <h2 class="fw-bold mb-0 text-warning">{{ results.ensemble_accuracy }}%</h2>
+                        </div>
+                        <div class="metric-icon bg-warning bg-opacity-10">
+                            <i class="bi bi-lightning-fill text-warning fs-4"></i>
+                        </div>
+                    </div>
+                    <div class="progress mt-2" style="height:6px">
+                        <div class="progress-bar bg-warning" style="width:{{ results.ensemble_accuracy }}%"></div>
+                    </div>
+                    <p class="text-muted small mt-2 mb-0">XGBoost + CNN averaged probabilities</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Charts Row -->
+        <div class="row g-4 mb-5">
+            <div class="col-lg-6">
+                <div class="card glass-card h-100">
+                    <div class="card-body p-4">
+                        <h5 class="fw-bold mb-4"><i class="bi bi-pie-chart-fill text-success me-2"></i>Attack Category
+                            Distribution</h5>
+                        <canvas id="distChart" height="280"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-6">
+                <div class="card glass-card h-100">
+                    <div class="card-body p-4">
+                        <h5 class="fw-bold mb-4"><i class="bi bi-bar-chart-fill text-success me-2"></i>Model Accuracy
+                            Comparison</h5>
+                        <canvas id="accChart" height="280"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Selected Features -->
+        <div class="card glass-card mb-5">
+            <div class="card-body p-4">
+                <h5 class="fw-bold mb-4"><i class="bi bi-funnel-fill text-success me-2"></i>Top 20 Selected Features
+                    (Random Forest)</h5>
+                <div class="d-flex flex-wrap gap-2">
+                    {% for feat in results.selected_features %}
+                    <span class="badge bg-secondary bg-opacity-50 text-light px-3 py-2 fs-xs">
+                        <i class="bi bi-chevron-right text-success me-1"></i>{{ feat }}
+                    </span>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Architecture Info -->
+        <div class="card glass-card mb-5">
+            <div class="card-body p-4">
+                <h5 class="fw-bold mb-4"><i class="bi bi-diagram-2-fill text-success me-2"></i>System Architecture</h5>
+                <div class="row g-3 text-center">
+                    <div class="col-md-2d4">
+                        <div class="arch-step">
+                            <div class="arch-icon"><i class="bi bi-database-fill-gear fs-3 text-info"></i></div>
+                            <h6 class="mt-2 fw-semibold">NSL-KDD</h6>
+                            <p class="text-muted small mb-0">125K+ records<br>41 features</p>
+                        </div>
+                    </div>
+                    <div class="col-md-2d4 d-flex align-items-center justify-content-center">
+                        <i class="bi bi-arrow-right fs-3 text-success"></i>
+                    </div>
+                    <div class="col-md-2d4">
+                        <div class="arch-step">
+                            <div class="arch-icon"><i class="bi bi-sliders fs-3 text-warning"></i></div>
+                            <h6 class="mt-2 fw-semibold">Pre-processing</h6>
+                            <p class="text-muted small mb-0">Encoding<br>MinMaxScale</p>
+                        </div>
+                    </div>
+                    <div class="col-md-2d4 d-flex align-items-center justify-content-center">
+                        <i class="bi bi-arrow-right fs-3 text-success"></i>
+                    </div>
+                    <div class="col-md-2d4">
+                        <div class="arch-step">
+                            <div class="arch-icon"><i class="bi bi-cpu fs-3 text-success"></i></div>
+                            <h6 class="mt-2 fw-semibold">RF Selection</h6>
+                            <p class="text-muted small mb-0">Top 20<br>features</p>
+                        </div>
+                    </div>
+                    <div class="col-md-2d4 d-flex align-items-center justify-content-center">
+                        <i class="bi bi-arrow-right fs-3 text-success"></i>
+                    </div>
+                    <div class="col-md-2d4">
+                        <div class="arch-step">
+                            <div class="arch-icon"><i class="bi bi-lightning-fill fs-3 text-danger"></i></div>
+                            <h6 class="mt-2 fw-semibold">XGBoost + CNN</h6>
+                            <p class="text-muted small mb-0">Parallel<br>ensemble</p>
+                        </div>
+                    </div>
+                    <div class="col-md-2d4 d-flex align-items-center justify-content-center">
+                        <i class="bi bi-arrow-right fs-3 text-success"></i>
+                    </div>
+                    <div class="col-md-2d4">
+                        <div class="arch-step">
+                            <div class="arch-icon"><i class="bi bi-shield-fill-check fs-3 text-success"></i></div>
+                            <h6 class="mt-2 fw-semibold">5-Class Output</h6>
+                            <p class="text-muted small mb-0">Normal/DoS<br>Probe/R2L/U2R</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {% else %}
+        <div class="alert alert-warning text-center py-5">
+            <i class="bi bi-exclamation-triangle fs-1 d-block mb-3"></i>
+            <h4>Models Not Trained Yet</h4>
+            <p class="mb-3">Run <code>python train.py</code> inside the <code>IDS_Project</code> folder to train models.
+            </p>
+            <a href="/" class="btn btn-success"><i class="bi bi-arrow-left me-2"></i>Back to Home</a>
+        </div>
+        {% endif %}
+    </div>
+    <br><br>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    {% if results %}
+    <script>
+        // Pie chart – attack categories (NSL-KDD approximate distribution)
+        const attackData = { Normal: 67343, DoS: 45927, Probe: 11656, R2L: 995, U2R: 52 };
+        const colors = ['#22c55e', '#ef4444', '#f97316', '#a855f7', '#3b82f6'];
+
+        new Chart(document.getElementById('distChart'), {
+            type: 'doughnut',
+            data: {
+                labels: Object.keys(attackData),
+                datasets: [{
+                    data: Object.values(attackData), backgroundColor: colors,
+                    borderWidth: 2, borderColor: '#0f172a'
+                }]
+            },
+            options: {
+                plugins: {
+                    legend: { position: 'bottom', labels: { color: '#94a3b8', padding: 16 } },
+                    tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.parsed.toLocaleString()}` } }
+                }
+            }
+        });
+
+        // Accuracy bar chart
+        new Chart(document.getElementById('accChart'), {
+            type: 'bar',
+            data: {
+                labels: ['XGBoost', 'CNN', 'Ensemble'],
+                datasets: [{
+                    label: 'Accuracy (%)',
+                    data: [{{ results.xgb_accuracy }}, {{ results.cnn_accuracy }}, {{ results.ensemble_accuracy }}],
+            backgroundColor: ['#22c55e', '#3b82f6', '#f59e0b'],
+            borderRadius: 10, borderSkipped: false,
+    }]
+  },
+            options: {
+            responsive: true,
+            plugins: { legend: { display: false } },
+            scales: {
+                y: {
+                    beginAtZero: true, max: 100, ticks: { color: '#94a3b8', callback: v => v + '%' },
+                    grid: { color: '#1e293b' }
+                },
+                x: { ticks: { color: '#94a3b8' }, grid: { display: false } }
+            }
+        }
+});
+    </script>
+    {% endif %}
+</body>
+
+</html>

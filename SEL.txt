@@ -1,0 +1,21 @@
+#	Feature	Type
+1	dst_host_srv_count	Network traffic
+2	logged_in	Content
+3	dst_host_same_src_port_rate	Network traffic
+4	dst_host_serror_rate	Network traffic
+5	dst_host_diff_srv_rate	Network traffic
+6	count	Time-based
+7	srv_count	Time-based
+8	dst_host_count	Network traffic
+9	service_telnet	One-hot encoded categorical
+10	dst_host_srv_diff_host_rate	Network traffic
+11	dst_host_same_srv_rate	Network traffic
+12	service_http	One-hot encoded categorical
+13	dst_host_srv_serror_rate	Network traffic
+14	dst_bytes	Basic
+15	flag_S0	One-hot encoded categorical
+16	same_srv_rate	Time-based
+17	service_ftp_data	One-hot encoded categorical
+18	root_shell	Content
+19	duration	Basic
+20	dst_host_rerror_rate	Network traffic

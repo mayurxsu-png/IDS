@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>IDS — Intrusion Detection System</title>
+    <meta name="description" content="Real-time network intrusion detection powered by Hybrid ML (XGBoost + 1D-CNN)">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+</head>
+
+<body>
+
+    <!-- ── Navbar ── -->
+    <nav class="navbar navbar-expand-lg navbar-dark fixed-top" id="mainNav">
+        <div class="container">
+            <a class="navbar-brand d-flex align-items-center gap-2" href="/">
+                <i class="bi bi-shield-lock-fill text-success fs-4"></i>
+                <span class="fw-bold">IDS<span class="text-success">Pro</span></span>
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMenu">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navMenu">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item"><a class="nav-link active" href="/">Home</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/dashboard">Dashboard</a></li>
+                    <li class="nav-item ms-2">
+                        <a class="nav-link btn btn-success btn-sm px-3 text-white fw-bold" href="/live">
+                            <i class="bi bi-broadcast me-1"></i>Live Monitor
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- ── Hero ── -->
+    <section class="hero-section" style="position:relative; overflow:hidden;">
+        <!-- Matrix Canvas -->
+        <canvas id="matrixCanvas"
+            style="position:absolute; top:0; left:0; width:100%; height:100%; z-index:0; opacity:0.15;"></canvas>
+
+        <div class="hero-overlay" style="z-index:1;"></div>
+        <div class="container position-relative text-white text-center py-5" style="z-index:2;">
+            <div class="hero-badge mb-3">🛡 NSL-KDD Hybrid ML System</div>
+            <h1 class="display-4 fw-bold mb-3">Intelligent Network<br><span class="text-success">Intrusion
+                    Detection</span></h1>
+            <p class="lead mb-4 opacity-75">Real-time threat classification powered by XGBoost + 1D-CNN
+                ensemble<br>covering 5 attack categories with 99%+ accuracy.</p>
+            {% if model_loaded %}
+            <div class="d-flex gap-3 justify-content-center flex-wrap">
+                <a href="/live" class="btn btn-success btn-lg px-4 fw-semibold">
+                    <i class="bi bi-broadcast me-2"></i>Live Monitor
+                </a>
+                <a href="#predict-section" class="btn btn-outline-light btn-lg px-4 fw-semibold">
+                    <i class="bi bi-cpu me-2"></i>Run Prediction
+                </a>
+                <a href="/dashboard" class="btn btn-outline-light btn-lg px-4">
+                    <i class="bi bi-bar-chart me-2"></i>Dashboard
+                </a>
+            </div>
+            {% else %}
+            <div class="alert alert-warning d-inline-block mt-3">
+                ⚠ Models not loaded. Run <code>python train.py</code> first.
+            </div>
+            {% endif %}
+        </div>
+    </section>
+
+
+    <!-- ── Stats Cards ── -->
+    {% if model_loaded and results %}
+    <section class="py-5 bg-dark">
+        <div class="container">
+            <div class="row g-4 text-center">
+                <div class="col-6 col-md-3">
+                    <div class="stat-card">
+                        <div class="stat-icon text-success"><i class="bi bi-cpu-fill"></i></div>
+                        <div class="stat-val">{{ results.xgb_accuracy }}%</div>
+                        <div class="stat-lbl">XGBoost Accuracy</div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="stat-card">
+                        <div class="stat-icon text-primary"><i class="bi bi-diagram-3-fill"></i></div>
+                        <div class="stat-val">{{ results.cnn_accuracy }}%</div>
+                        <div class="stat-lbl">CNN Accuracy</div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="stat-card">
+                        <div class="stat-icon text-warning"><i class="bi bi-lightning-fill"></i></div>
+                        <div class="stat-val">{{ results.ensemble_accuracy }}%</div>
+                        <div class="stat-lbl">Ensemble Accuracy</div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="stat-card">
+                        <div class="stat-icon text-danger"><i class="bi bi-shield-fill-check"></i></div>
+                        <div class="stat-val">5</div>
+                        <div class="stat-lbl">Attack Classes</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+    {% endif %}
+
+    <!-- ── Flash Messages ── -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="container mt-3">
+        {% for cat, msg in messages %}
+        <div class="alert alert-{{ cat }} alert-dismissible fade show" role="alert">
+            {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% endwith %}
+
+    <!-- ── Predict Section ── -->
+    <section class="py-5" id="predict-section">
+        <div class="container">
+            <h2 class="section-title text-center mb-5">
+                <i class="bi bi-search-heart text-success me-2"></i>Manual Prediction
+            </h2>
+
+            <ul class="nav nav-tabs nav-fill mb-4" id="predictTab" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active fw-semibold" id="manual-tab" data-bs-toggle="tab"
+                        data-bs-target="#manual" type="button">
+                        <i class="bi bi-keyboard me-2"></i>Manual Input
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link fw-semibold" id="csv-tab" data-bs-toggle="tab" data-bs-target="#csv"
+                        type="button">
+                        <i class="bi bi-filetype-csv me-2"></i>CSV Batch Upload
+                    </button>
+                </li>
+            </ul>
+
+            <div class="tab-content">
+                <!-- Manual Tab -->
+                <div class="tab-pane fade show active" id="manual" role="tabpanel">
+                    <div class="card glass-card">
+                        <div class="card-body p-4">
+                            <form action="/predict" method="POST" id="predictForm">
+                                <div class="row g-3">
+                                    <!-- Basic features -->
+                                    <div class="col-md-3">
+                                        <label class="form-label text-muted small">Duration</label>
+                                        <input type="number" class="form-control" name="duration" value="0" min="0">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label text-muted small">Protocol Type</label>
+                                        <select class="form-select" name="protocol_type">
+                                            <option value="tcp">tcp</option>
+                                            <option value="udp">udp</option>
+                                            <option value="icmp">icmp</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label text-muted small">Service</label>
+                                        <input type="text" class="form-control" name="service" value="http"
+                                            list="serviceList">
+                                        <datalist id="serviceList">
+                                            <option value="http">
+                                            <option value="ftp_data">
+                                            <option value="smtp">
+                                            <option value="private">
+                                            <option value="domain_u">
+                                            <option value="other">
+                                            <option value="ecr_i">
+                                            <option value="eco_i">
+                                            <option value="telnet">
+                                            <option value="ftp">
+                                            <option value="finger">
+                                            <option value="auth">
+                                            <option value="pop_3">
+                                            <option value="ssh">
+                                            <option value="imap4">
+                                        </datalist>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label text-muted small">Flag</label>
+                                        <input type="text" class="form-control" name="flag" value="SF" list="flagList">
+                                        <datalist id="flagList">
+                                            <option value="SF">
+                                            <option value="S0">
+                                            <option value="REJ">
+                                            <option value="RSTR">
+                                            <option value="RSTO">
+                                            <option value="SH">
+                                            <option value="S1">
+                                            <option value="S2">
+                                            <option value="S3">
+                                            <option value="OTH">
+                                            <option value="RSTOS0">
+                                        </datalist>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label text-muted small">Src Bytes</label>
+                                        <input type="number" class="form-control" name="src_bytes" value="0" min="0">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label text-muted small">Dst Bytes</label>
+                                        <input type="number" class="form-control" name="dst_bytes" value="0" min="0">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label text-muted small">Same Srv Rate</label>
+                                        <input type="number" class="form-control" name="same_srv_rate" value="1.0"
+                                            step="0.01" min="0" max="1">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label text-muted small">Serror Rate</label>
+                                        <input type="number" class="form-control" name="serror_rate" value="0.0"
+                                            step="0.01" min="0" max="1">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label text-muted small">Rerror Rate</label>
+                                        <input type="number" class="form-control" name="rerror_rate" value="0.0"
+                                            step="0.01" min="0" max="1">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label text-muted small">Count</label>
+                                        <input type="number" class="form-control" name="count" value="1" min="0">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label text-muted small">Srv Count</label>
+                                        <input type="number" class="form-control" name="srv_count" value="1" min="0">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label text-muted small">Dst Host Count</label>
+                                        <input type="number" class="form-control" name="dst_host_count" value="255"
+                                            min="0" max="255">
+                                    </div>
+                                    <!-- Hidden fields with default 0 for remaining KDD features -->
+                                    {% for col in ['land','wrong_fragment','urgent','hot','num_failed_logins',
+                                    'logged_in','num_compromised','root_shell','su_attempted',
+                                    'num_root','num_file_creations','num_shells','num_access_files',
+                                    'num_outbound_cmds','is_host_login','is_guest_login',
+                                    'srv_serror_rate','srv_rerror_rate','diff_srv_rate',
+                                    'srv_diff_host_rate','dst_host_srv_count',
+                                    'dst_host_same_srv_rate','dst_host_diff_srv_rate',
+                                    'dst_host_same_src_port_rate','dst_host_srv_diff_host_rate',
+                                    'dst_host_serror_rate','dst_host_srv_serror_rate',
+                                    'dst_host_rerror_rate','dst_host_srv_rerror_rate'] %}
+                                    <input type="hidden" name="{{ col }}" value="0">
+                                    {% endfor %}
+                                </div>
+
+                                <!-- Model Selector -->
+                                <div class="mt-4">
+                                    <label class="form-label fw-semibold mb-2 d-block">
+                                        <i class="bi bi-cpu text-success me-1"></i>Prediction Model
+                                    </label>
+                                    <div class="d-flex flex-wrap gap-2 model-selector">
+                                        <label class="model-option" id="opt-ensemble">
+                                            <input type="radio" name="model_choice" value="ensemble" checked
+                                                class="d-none">
+                                            <div class="model-btn active">
+                                                <i class="bi bi-lightning-fill text-warning me-1"></i>
+                                                <span class="fw-semibold">Hybrid Ensemble</span>
+                                                <small class="d-block text-muted" style="font-size:0.7rem">XGBoost + CNN
+                                                    (best accuracy)</small>
+                                            </div>
+                                        </label>
+                                        <label class="model-option" id="opt-xgb">
+                                            <input type="radio" name="model_choice" value="xgb" class="d-none">
+                                            <div class="model-btn">
+                                                <i class="bi bi-tree-fill text-success me-1"></i>
+                                                <span class="fw-semibold">XGBoost Only</span>
+                                                <small class="d-block text-muted" style="font-size:0.7rem">Gradient
+                                                    boosted trees</small>
+                                            </div>
+                                        </label>
+                                        <label class="model-option" id="opt-cnn">
+                                            <input type="radio" name="model_choice" value="cnn" class="d-none">
+                                            <div class="model-btn">
+                                                <i class="bi bi-diagram-3-fill text-primary me-1"></i>
+                                                <span class="fw-semibold">CNN Only</span>
+                                                <small class="d-block text-muted" style="font-size:0.7rem">1D
+                                                    Convolutional Neural Net</small>
+                                            </div>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <!-- Quick Presets -->
+                                <div class="mt-4">
+                                    <label class="form-label fw-semibold text-muted small">Quick Presets (real data from
+                                        dataset):</label>
+                                    <div class="d-flex gap-2 flex-wrap" id="presetBtns">
+                                        <button type="button" class="btn btn-sm btn-outline-success"
+                                            onclick="setPreset('normal')">✅ Normal</button>
+                                        <button type="button" class="btn btn-sm btn-outline-danger"
+                                            onclick="setPreset('neptune')">🔴 DoS (Neptune)</button>
+                                        <button type="button" class="btn btn-sm btn-outline-warning"
+                                            onclick="setPreset('satan')">⚠️ Probe (Satan)</button>
+                                        <button type="button" class="btn btn-sm btn-outline-purple"
+                                            onclick="setPreset('guess_passwd')">🔒 R2L</button>
+                                        <button type="button" class="btn btn-sm btn-outline-primary"
+                                            onclick="setPreset('buffer_overflow')">🔵 U2R</button>
+                                    </div>
+                                </div>
+
+                                <div class="mt-4 text-center">
+                                    <button type="submit" class="btn btn-success btn-lg px-5 fw-semibold"
+                                        id="predictBtn">
+                                        <i class="bi bi-cpu me-2"></i>Predict Attack Type
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- CSV Tab -->
+                <div class="tab-pane fade" id="csv" role="tabpanel">
+                    <div class="card glass-card">
+                        <div class="card-body p-4">
+                            <!-- CSV Model Selector -->
+                            <div class="mb-4">
+                                <label class="form-label fw-semibold">
+                                    <i class="bi bi-cpu text-success me-1"></i>Prediction Model
+                                </label>
+                                <select class="form-select" id="csvModelChoice" style="max-width:320px">
+                                    <option value="ensemble">⚡ Hybrid Ensemble (XGBoost + CNN)</option>
+                                    <option value="xgb">🌲 XGBoost Only</option>
+                                    <option value="cnn">🔷 CNN Only</option>
+                                </select>
+                            </div>
+                            <div class="text-center">
+                                <div class="upload-zone" id="uploadZone">
+                                    <i class="bi bi-cloud-upload fs-1 text-success"></i>
+                                    <p class="mt-3 mb-1 fw-semibold">Drop your CSV file here or click to browse</p>
+                                    <p class="text-muted small">Format: NSL-KDD 41-feature CSV (no header)</p>
+                                    <input type="file" id="csvFile" accept=".csv" class="d-none">
+                                    <button class="btn btn-outline-success mt-3"
+                                        onclick="document.getElementById('csvFile').click()">
+                                        <i class="bi bi-folder2-open me-2"></i>Browse File
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div id="csvResults" class="mt-4 d-none">
+                                <div id="csvSummary" class="mb-4"></div>
+                                <div id="csvChart" class="mb-4">
+                                    <canvas id="pieChart" width="300" height="300"
+                                        style="max-width:300px;margin:auto;"></canvas>
+                                </div>
+                                <div id="csvTable"></div>
+                                <button class="btn btn-success mt-3" id="downloadBtn">
+                                    <i class="bi bi-download me-2"></i>Download Report (CSV)
+                                </button>
+                            </div>
+                            <div id="csvSpinner" class="mt-3 d-none">
+                                <div class="spinner-border text-success" role="status"></div>
+                                <p class="mt-2">Analyzing packets…</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ── Attack Classes ── -->
+    <section class="py-5 bg-dark">
+        <div class="container">
+            <h2 class="section-title text-center mb-5">
+                <i class="bi bi-grid-3x3-gap text-success me-2"></i>Attack Categories
+            </h2>
+            <div class="row g-4">
+                {% set cats = [
+                ('Normal', 'bi-check-circle-fill', 'text-success', 'Legitimate network traffic with no malicious
+                intent.'),
+                ('DoS', 'bi-exclamation-octagon-fill', 'text-danger', 'Denial-of-Service attacks: Neptune, Smurf,
+                Teardrop, Pod.'),
+                ('Probe', 'bi-search', 'text-warning', 'Surveillance attacks: Portsweep, Nmap, Ipsweep, Satan.'),
+                ('R2L', 'bi-person-lock', 'text-purple', 'Remote-to-Local attacks: FTP write, Guess passwd,
+                Warezclient.'),
+                ('U2R', 'bi-arrow-up-circle-fill', 'text-primary', 'User-to-Root privilege escalation: Buffer overflow,
+                Rootkit.'),
+                ] %}
+                {% for name, icon, color, desc in cats %}
+                <div class="col-6 col-md-4 col-lg-2d4">
+                    <div class="attack-card text-center">
+                        <i class="bi {{ icon }} {{ color }} fs-2 mb-3"></i>
+                        <h5 class="fw-bold mb-2">{{ name }}</h5>
+                        <p class="text-muted small mb-0">{{ desc }}</p>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+
+    <!-- ── Footer ── -->
+    <footer class="py-4 bg-black text-center text-muted small">
+        <div class="container">
+            <p class="mb-1">IDS<strong class="text-success">Pro</strong> — Hybrid ML Intrusion Detection System</p>
+            <p class="mb-0">TY Engineering Final Year Project &bull; NSL-KDD Dataset &bull; XGBoost + 1D-CNN Ensemble
+            </p>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // ── Load real presets from backend on page load ──
+        let realPresets = {};
+        fetch('/api/presets').then(r => r.json()).then(data => { realPresets = data; });
+
+        function setPreset(type) {
+            const preset = realPresets[type];
+            if (!preset) { alert('Preset not loaded yet. Please wait a moment.'); return; }
+            const vals = preset.values;
+            const form = document.getElementById('predictForm');
+            // Fill ALL 41 fields — visible inputs, hidden inputs, selects
+            Object.entries(vals).forEach(([key, val]) => {
+                const el = form.elements[key];
+                if (el) el.value = val;
+            });
+        }
+
+        // ── CSV Upload ─────────────────────────────────────────────────────────────
+        let batchResults = null;
+        let pieChartInstance = null;
+
+        document.getElementById('csvFile').addEventListener('change', function () {
+            if (!this.files.length) return;
+            uploadCSV(this.files[0]);
+        });
+
+        const uploadZone = document.getElementById('uploadZone');
+        uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+        uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+        uploadZone.addEventListener('drop', e => {
+            e.preventDefault(); uploadZone.classList.remove('drag-over');
+            if (e.dataTransfer.files.length) uploadCSV(e.dataTransfer.files[0]);
+        });
+
+        function uploadCSV(file) {
+            const fd = new FormData();
+            fd.append('file', file);
+            fd.append('model_choice', document.getElementById('csvModelChoice').value);
+            document.getElementById('csvSpinner').classList.remove('d-none');
+            document.getElementById('csvResults').classList.add('d-none');
+
+            fetch('/upload_csv', { method: 'POST', body: fd })
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById('csvSpinner').classList.add('d-none');
+                    if (data.error) { alert('Error: ' + data.error); return; }
+                    batchResults = data;
+                    renderCSVResults(data);
+                })
+                .catch(e => { document.getElementById('csvSpinner').classList.add('d-none'); console.error(e); });
+        }
+
+        function renderCSVResults(data) {
+            document.getElementById('csvResults').classList.remove('d-none');
+            const colors = { Normal: '#22c55e', DoS: '#ef4444', Probe: '#f97316', R2L: '#a855f7', U2R: '#3b82f6' };
+
+            // Summary badges
+            let html = `<h5 class="fw-bold mb-3">📊 Prediction Summary
+              <span class="badge bg-secondary">${data.total_records} records</span>
+              <span class="badge bg-info ms-1" style="font-size:0.7rem">
+                🤖 ${data.model_label || 'Hybrid Ensemble'}
+              </span></h5>
+              <div class="d-flex flex-wrap gap-2 justify-content-center mb-3">`;
+            Object.entries(data.summary).forEach(([k, v]) => {
+                if (v > 0) html += `<span class="badge fs-6 px-3 py-2" style="background:${colors[k] || '#64748b'}">${k}: ${v}</span>`;
+            });
+            document.getElementById('csvSummary').innerHTML = html + '</div>';
+
+            // Pie chart
+            if (pieChartInstance) pieChartInstance.destroy();
+            const labels = Object.keys(data.summary).filter(k => data.summary[k] > 0);
+            const vals = labels.map(k => data.summary[k]);
+            const bgColors = labels.map(k => colors[k] || '#64748b');
+            pieChartInstance = new Chart(document.getElementById('pieChart'), {
+                type: 'doughnut',
+                data: { labels, datasets: [{ data: vals, backgroundColor: bgColors, borderWidth: 2 }] },
+                options: { plugins: { legend: { labels: { color: '#e2e8f0' }, position: 'bottom' } } }
+            });
+
+            // Table (first 50)
+            let tbl = `<div class="table-responsive"><table class="table table-dark table-striped table-hover align-middle">
+    <thead><tr><th>#</th><th>Prediction</th><th>Confidence</th></tr></thead><tbody>`;
+            data.results.slice(0, 50).forEach(r => {
+                tbl += `<tr>
+      <td class="text-muted">${r.row}</td>
+      <td><span class="badge" style="background:${r.color}">${r.prediction}</span></td>
+      <td><div class="progress" style="height:6px"><div class="progress-bar" 
+           style="width:${r.confidence}%;background:${r.color}"></div></div>
+           <small class="text-muted">${r.confidence}%</small></td>
+    </tr>`;
+            });
+            document.getElementById('csvTable').innerHTML = tbl + '</tbody></table></div>';
+            if (data.results.length > 50) {
+                document.getElementById('csvTable').innerHTML += `<p class="text-muted text-center">… and ${data.results.length - 50} more. Download report for all.</p>`;
+            }
+        }
+
+        document.getElementById('downloadBtn')?.addEventListener('click', function () {
+            if (!batchResults) return;
+            fetch('/download_report', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(batchResults),
+            }).then(r => r.blob()).then(blob => {
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = 'ids_report.csv';
+                a.click();
+            });
+        });
+
+        // Model selector visual toggle
+        document.querySelectorAll('.model-option input[type=radio]').forEach(radio => {
+            radio.addEventListener('change', () => {
+                document.querySelectorAll('.model-btn').forEach(b => b.classList.remove('active'));
+                radio.closest('.model-option').querySelector('.model-btn').classList.add('active');
+            });
+        });
+
+        // Matrix Rain Animation
+        const canvas = document.getElementById('matrixCanvas');
+        const ctx = canvas.getContext('2d');
+        let width = canvas.width = window.innerWidth;
+        let height = canvas.height = document.querySelector('.hero-section').offsetHeight;
+
+        const chars = '01ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%^&*()';
+        const font_size = 14;
+        let columns = width / font_size;
+        let drops = [];
+        for (let x = 0; x < columns; x++) drops[x] = 1;
+
+        function drawMatrix() {
+            ctx.fillStyle = 'rgba(10, 15, 30, 0.05)';
+            ctx.fillRect(0, 0, width, height);
+            ctx.fillStyle = '#22c55e'; // Green
+            ctx.font = font_size + 'px monospace';
+
+            for (let i = 0; i < drops.length; i++) {
+                const text = chars[Math.floor(Math.random() * chars.length)];
+                ctx.fillText(text, i * font_size, drops[i] * font_size);
+                if (drops[i] * font_size > height && Math.random() > 0.975) drops[i] = 0;
+                drops[i]++;
+            }
+        }
+        setInterval(drawMatrix, 40);
+
+        window.addEventListener('resize', () => {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = document.querySelector('.hero-section').offsetHeight;
+            columns = width / font_size;
+            drops = [];
+            for (let x = 0; x < columns; x++) drops[x] = 1;
+        });
+
+        // Navbar scroll
+        window.addEventListener('scroll', () => {
+            document.getElementById('mainNav').classList.toggle('scrolled', window.scrollY > 50);
+        });
+    </script>
+</body>
+
+</html>
