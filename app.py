@@ -110,14 +110,13 @@ class NumpyXGBPredictor:
 
 # ─── Lightweight NumPy Scaler & LabelEncoder (no scikit-learn required) ───────
 class NumpyScaler:
-    def __init__(self, scaler_obj_or_path):
-        if isinstance(scaler_obj_or_path, str):
-            with open(scaler_obj_or_path, 'rb') as f:
-                obj = pickle.load(f)
+    def __init__(self, data_or_obj):
+        if isinstance(data_or_obj, dict):
+            self.min_ = np.array(data_or_obj['min_'], dtype=np.float32)
+            self.scale_ = np.array(data_or_obj['scale_'], dtype=np.float32)
         else:
-            obj = scaler_obj_or_path
-        self.min_ = np.array(obj.min_, dtype=np.float32)
-        self.scale_ = np.array(obj.scale_, dtype=np.float32)
+            self.min_ = np.array(getattr(data_or_obj, 'min_', []), dtype=np.float32)
+            self.scale_ = np.array(getattr(data_or_obj, 'scale_', []), dtype=np.float32)
 
     def transform(self, X):
         if hasattr(X, 'values'):
@@ -125,13 +124,11 @@ class NumpyScaler:
         return X * self.scale_ + self.min_
 
 class NumpyLabelEncoder:
-    def __init__(self, le_obj_or_path):
-        if isinstance(le_obj_or_path, str):
-            with open(le_obj_or_path, 'rb') as f:
-                obj = pickle.load(f)
+    def __init__(self, data_or_obj):
+        if isinstance(data_or_obj, dict):
+            self.classes_ = np.array(data_or_obj['classes_'])
         else:
-            obj = le_obj_or_path
-        self.classes_ = np.array(obj.classes_)
+            self.classes_ = np.array(getattr(data_or_obj, 'classes_', []))
 
     def inverse_transform(self, indices):
         return self.classes_[indices]
@@ -162,13 +159,29 @@ def load_models():
             except Exception as e:
                 print(f"[WARN] Failed to load cnn.h5: {e}")
 
-        with open(os.path.join(MODEL_DIR, 'scaler.pkl'), 'rb') as f:
-            obj = pickle.load(f)
-            models['scaler'] = NumpyScaler(obj)
+        scaler_params = os.path.join(MODEL_DIR, 'scaler_params.pkl')
+        scaler_file = os.path.join(MODEL_DIR, 'scaler.pkl')
+        if os.path.exists(scaler_params):
+            with open(scaler_params, 'rb') as f:
+                models['scaler'] = NumpyScaler(pickle.load(f))
+        elif os.path.exists(scaler_file):
+            try:
+                with open(scaler_file, 'rb') as f:
+                    models['scaler'] = NumpyScaler(pickle.load(f))
+            except Exception as e:
+                print(f"[WARN] Failed to load scaler.pkl: {e}")
 
-        with open(os.path.join(MODEL_DIR, 'label_encoder.pkl'), 'rb') as f:
-            obj = pickle.load(f)
-            models['le'] = NumpyLabelEncoder(obj)
+        le_params = os.path.join(MODEL_DIR, 'label_encoder_params.pkl')
+        le_file = os.path.join(MODEL_DIR, 'label_encoder.pkl')
+        if os.path.exists(le_params):
+            with open(le_params, 'rb') as f:
+                models['le'] = NumpyLabelEncoder(pickle.load(f))
+        elif os.path.exists(le_file):
+            try:
+                with open(le_file, 'rb') as f:
+                    models['le'] = NumpyLabelEncoder(pickle.load(f))
+            except Exception as e:
+                print(f"[WARN] Failed to load label_encoder.pkl: {e}")
 
         with open(os.path.join(MODEL_DIR, 'feature_indices.pkl'), 'rb') as f:
             feat = pickle.load(f)
