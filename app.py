@@ -77,12 +77,79 @@ class NumpyCNNPredictor:
         e = np.exp(logits - np.max(logits, axis=-1, keepdims=True))
         return e / np.sum(e, axis=-1, keepdims=True)
 
+# ─── Lightweight NumPy XGBoost Predictor (no xgboost required) ────────────────
+class NumpyXGBPredictor:
+    def __init__(self, weights_path):
+        with open(weights_path, 'rb') as f:
+            data = pickle.load(f)
+        self.base_score = data['base_score']
+        self.trees = data['trees']
+        self.num_classes = data['num_classes']
+
+    def eval_node(self, node, row):
+        if node[0] == 0:  # leaf
+            return node[1]
+        _, feat_idx, thresh, yes_id, no_id, children = node
+        val = row[feat_idx]
+        if np.isnan(val) or val >= thresh:
+            next_id = no_id
+        else:
+            next_id = yes_id
+        return self.eval_node(children[next_id], row)
+
+    def predict_proba(self, X):
+        N = X.shape[0]
+        raw_scores = np.tile(self.base_score, (N, 1))
+        for i in range(N):
+            row = X[i]
+            for t_idx, tree in enumerate(self.trees):
+                cls = t_idx % self.num_classes
+                raw_scores[i, cls] += self.eval_node(tree, row)
+        e = np.exp(raw_scores - np.max(raw_scores, axis=1, keepdims=True))
+        return e / np.sum(e, axis=1, keepdims=True)
+
+# ─── Lightweight NumPy Scaler & LabelEncoder (no scikit-learn required) ───────
+class NumpyScaler:
+    def __init__(self, scaler_obj_or_path):
+        if isinstance(scaler_obj_or_path, str):
+            with open(scaler_obj_or_path, 'rb') as f:
+                obj = pickle.load(f)
+        else:
+            obj = scaler_obj_or_path
+        self.min_ = np.array(obj.min_, dtype=np.float32)
+        self.scale_ = np.array(obj.scale_, dtype=np.float32)
+
+    def transform(self, X):
+        if hasattr(X, 'values'):
+            X = X.values
+        return X * self.scale_ + self.min_
+
+class NumpyLabelEncoder:
+    def __init__(self, le_obj_or_path):
+        if isinstance(le_obj_or_path, str):
+            with open(le_obj_or_path, 'rb') as f:
+                obj = pickle.load(f)
+        else:
+            obj = le_obj_or_path
+        self.classes_ = np.array(obj.classes_)
+
+    def inverse_transform(self, indices):
+        return self.classes_[indices]
+
 # ─── Load models at startup ───────────────────────────────────────────────────
 def load_models():
     models = {}
     try:
-        with open(os.path.join(MODEL_DIR, 'xgb.pkl'), 'rb') as f:
-            models['xgb'] = pickle.load(f)
+        xgb_pkl = os.path.join(MODEL_DIR, 'xgb_weights.pkl')
+        if os.path.exists(xgb_pkl):
+            models['xgb'] = NumpyXGBPredictor(xgb_pkl)
+        else:
+            with open(os.path.join(MODEL_DIR, 'xgb.pkl'), 'rb') as f:
+                try:
+                    import xgboost as xgb
+                    models['xgb'] = pickle.load(f)
+                except Exception as e:
+                    print(f"[WARN] Failed to load xgb.pkl: {e}")
         
         weights_pkl = os.path.join(MODEL_DIR, 'cnn_weights.pkl')
         h5_path = os.path.join(MODEL_DIR, 'cnn.h5')
@@ -96,9 +163,13 @@ def load_models():
                 print(f"[WARN] Failed to load cnn.h5: {e}")
 
         with open(os.path.join(MODEL_DIR, 'scaler.pkl'), 'rb') as f:
-            models['scaler'] = pickle.load(f)
+            obj = pickle.load(f)
+            models['scaler'] = NumpyScaler(obj)
+
         with open(os.path.join(MODEL_DIR, 'label_encoder.pkl'), 'rb') as f:
-            models['le'] = pickle.load(f)
+            obj = pickle.load(f)
+            models['le'] = NumpyLabelEncoder(obj)
+
         with open(os.path.join(MODEL_DIR, 'feature_indices.pkl'), 'rb') as f:
             feat = pickle.load(f)
             models['indices']      = feat['indices']
@@ -106,7 +177,7 @@ def load_models():
             models['sel_features'] = feat['names']
         with open(os.path.join(MODEL_DIR, 'results.pkl'), 'rb') as f:
             models['results'] = pickle.load(f)
-        print("[INFO] All models loaded successfully.")
+        print("[INFO] All models loaded successfully in pure-NumPy mode.")
     except FileNotFoundError as e:
         print(f"[WARN] Model not found: {e} — Run train.py first.")
     return models
