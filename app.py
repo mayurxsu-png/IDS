@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 from flask import (Flask, render_template, request, jsonify,
                    send_file, redirect, url_for, flash, Response, stream_with_context)
-import tensorflow as tf
 
 app = Flask(__name__)
 app.secret_key = 'ids_secret_key_2024'
@@ -13,14 +12,89 @@ app.secret_key = 'ids_secret_key_2024'
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
 MODEL_DIR = os.path.join(BASE_DIR, 'model')
 
+# ─── Lightweight NumPy CNN Predictor (no tensorflow required) ─────────────────
+class NumpyCNNPredictor:
+    def __init__(self, weights_path):
+        with open(weights_path, 'rb') as f:
+            self.weights = pickle.load(f)
+
+    def predict(self, x, verbose=0):
+        if x.ndim == 2:
+            x = x.reshape(x.shape[0], x.shape[1], 1)
+        w = self.weights
+        # Layer 0: Conv1D (w[0]=kernel, w[1]=bias)
+        k0, b0 = w[0], w[1]
+        N, L, _ = x.shape
+        k_len, _, C_out = k0.shape
+        pad = k_len // 2
+        x_pad = np.pad(x, ((0,0),(pad,pad),(0,0)), mode='constant')
+        out0 = np.zeros((N, L, C_out), dtype=np.float32)
+        for i in range(L):
+            out0[:, i, :] = np.einsum('nki,kio->no', x_pad[:, i:i+k_len, :], k0) + b0
+        x = np.maximum(0, out0)
+        # Layer 1: BN (gamma, beta, mean, var)
+        x = w[2] * (x - w[4]) / np.sqrt(w[5] + 1e-3) + w[3]
+        # Layer 2: Conv1D
+        k1, b1 = w[6], w[7]
+        N, L, _ = x.shape
+        k_len, _, C_out = k1.shape
+        pad = k_len // 2
+        x_pad = np.pad(x, ((0,0),(pad,pad),(0,0)), mode='constant')
+        out1 = np.zeros((N, L, C_out), dtype=np.float32)
+        for i in range(L):
+            out1[:, i, :] = np.einsum('nki,kio->no', x_pad[:, i:i+k_len, :], k1) + b1
+        x = np.maximum(0, out1)
+        # Layer 3: BN
+        x = w[8] * (x - w[10]) / np.sqrt(w[11] + 1e-3) + w[9]
+        # Layer 4: MaxPool1D(2)
+        N, L, C = x.shape
+        L_out = L // 2
+        x = np.max(x[:, :L_out*2, :].reshape(N, L_out, 2, C), axis=2)
+        # Layer 5: Conv1D
+        k2, b2 = w[12], w[13]
+        N, L, _ = x.shape
+        k_len, _, C_out = k2.shape
+        pad = k_len // 2
+        x_pad = np.pad(x, ((0,0),(pad,pad),(0,0)), mode='constant')
+        out2 = np.zeros((N, L, C_out), dtype=np.float32)
+        for i in range(L):
+            out2[:, i, :] = np.einsum('nki,kio->no', x_pad[:, i:i+k_len, :], k2) + b2
+        x = np.maximum(0, out2)
+        # Layer 6: BN
+        x = w[14] * (x - w[16]) / np.sqrt(w[17] + 1e-3) + w[15]
+        # Layer 7: MaxPool1D(2)
+        N, L, C = x.shape
+        L_out = L // 2
+        x = np.max(x[:, :L_out*2, :].reshape(N, L_out, 2, C), axis=2)
+        # Flatten
+        x = x.reshape(N, -1)
+        # Dense 1
+        x = np.maximum(0, x @ w[18] + w[19])
+        # Dense 2
+        x = np.maximum(0, x @ w[20] + w[21])
+        # Dense 3 Softmax
+        logits = x @ w[22] + w[23]
+        e = np.exp(logits - np.max(logits, axis=-1, keepdims=True))
+        return e / np.sum(e, axis=-1, keepdims=True)
+
 # ─── Load models at startup ───────────────────────────────────────────────────
 def load_models():
     models = {}
     try:
         with open(os.path.join(MODEL_DIR, 'xgb.pkl'), 'rb') as f:
             models['xgb'] = pickle.load(f)
-        models['cnn'] = tf.keras.models.load_model(
-            os.path.join(MODEL_DIR, 'cnn.h5'))
+        
+        weights_pkl = os.path.join(MODEL_DIR, 'cnn_weights.pkl')
+        h5_path = os.path.join(MODEL_DIR, 'cnn.h5')
+        if os.path.exists(weights_pkl):
+            models['cnn'] = NumpyCNNPredictor(weights_pkl)
+        elif os.path.exists(h5_path):
+            try:
+                import tensorflow as tf
+                models['cnn'] = tf.keras.models.load_model(h5_path)
+            except Exception as e:
+                print(f"[WARN] Failed to load cnn.h5: {e}")
+
         with open(os.path.join(MODEL_DIR, 'scaler.pkl'), 'rb') as f:
             models['scaler'] = pickle.load(f)
         with open(os.path.join(MODEL_DIR, 'label_encoder.pkl'), 'rb') as f:
