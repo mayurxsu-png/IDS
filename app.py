@@ -67,7 +67,11 @@ ATTACK_COLOR = {
 def load_presets():
     """Extract one sample row per attack type from real dataset for presets.
     Picks rows the CURRENT model actually classifies correctly."""
-    data_path = os.path.join(BASE_DIR, '..', 'KDDTrain+.txt')
+    data_path = os.path.join(BASE_DIR, 'KDDTrain+.txt')
+    if not os.path.exists(data_path):
+        data_path = os.path.join(BASE_DIR, '..', 'KDDTrain+.txt')
+    if not os.path.exists(data_path):
+        data_path = os.path.join(BASE_DIR, 'KDDTest+.txt')
     try:
         cols_full = KDD_COLS + ['label', 'difficulty']
         df = pd.read_csv(data_path, header=None, names=cols_full)
