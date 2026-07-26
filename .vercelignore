@@ -1,0 +1,33 @@
+# Vercel deployment ignore file
+
+# Documentation and PDF files
+*.pdf
+DOCUMENTATION.md
+
+# Large test/sample datasets and text outputs
+test_sample.csv
+debug_output.txt
+presets_output.txt
+test_output.txt
+SEL.txt
+test.txt
+
+# Development / Training scripts not needed for Web App inference
+train.py
+test_model.py
+comprehensive_metrics.py
+detailed_metrics.py
+debug_predict.py
+get_presets.py
+test_e2e.py
+
+# Model plot artifacts
+model/*.png
+
+# Virtual environments & cache
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+.git/
